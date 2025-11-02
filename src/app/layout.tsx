@@ -1,4 +1,4 @@
-import { Inter } from 'next/font/google'
+import { Inter } from 'next/font/google';
 import '../styles/global.css';
 
 const inter = Inter({
@@ -13,6 +13,12 @@ export default function RootLayout({
     return (
         <html>
             <head>
+                <script
+                    defer
+                    data-website-id="dfid_qOKTQ0rnv4b494JD9OnHY"
+                    data-domain="tavin.dev"
+                    src="https://datafa.st/js/script.js"
+                ></script>
                 <title>Gustavo</title>
                 <meta
                     name="description"
