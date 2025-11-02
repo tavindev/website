@@ -5,6 +5,7 @@ import {
     SiEthereum,
     SiGit,
     SiKubernetes,
+    SiMicroservices,
     SiMysql,
     SiNestjs,
     SiNextdotjs as SiNextDotJs,
@@ -152,6 +153,7 @@ export default async function Page() {
                     <ListItem icon={SiNextDotJs} text="NextJs" />
                     <ListItem icon={SiNodeDotJs} text="NodeJs" />
                     <ListItem icon={SiNestjs} text="NestJS" />
+                    <ListItem icon={SiMicroservices} text="Microservices" />
                     <ListItem icon={SiTypescript} text="TypeScript" />
                     <ListItem icon={SiPnpm} text="Pnpm" />
                     <ListItem icon={SiYarn} text="Yarn" />
