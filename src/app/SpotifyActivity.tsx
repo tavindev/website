@@ -4,6 +4,7 @@ import { animate } from 'motion';
 import Image from 'next/image';
 import { useEffect } from 'react';
 import { SiSpotify } from 'react-icons/si';
+import type { IconType } from 'react-icons';
 import { useLanyard } from 'use-lanyard';
 
 function AnimatedBars() {
@@ -100,7 +101,7 @@ export const SpotifyActivity = () => {
                 )}
                 <div className="flex items-center gap-2 py-2 px-3 text-gray-200 group-hover:text-[#1DB954] transition-all duration-300 ease-out">
                     <span>{song ?? 'Not Playing'}</span>
-                    {song ? <AnimatedBars /> : <SiSpotify />}
+                    {song ? <AnimatedBars /> : (SiSpotify as IconType)({})}
                 </div>
             </div>
         </div>

@@ -15,9 +15,6 @@ export type PinnedRepo = {
 };
 
 export const ProjectCard: React.FC<PinnedRepo> = (project) => {
-    const StarIcon = AiOutlineStar as IconType;
-    const ForkIcon = BiGitRepoForked as IconType;
-
     return (
         <a
             href={`https://github.com/${project.owner}/${project.repo}`}
@@ -29,11 +26,11 @@ export const ProjectCard: React.FC<PinnedRepo> = (project) => {
                 <h3 className="font-bold">{project.repo}</h3>
                 <div className="flex items-center justify-center gap-2">
                     <div className="flex items-center justify-center gap-1">
-                        <StarIcon size={16} />
+                        {(AiOutlineStar as IconType)({ size: 16 })}
                         <span>{project.stars}</span>
                     </div>
                     <div className="flex items-center justify-center gap-1">
-                        <ForkIcon size={16} />
+                        {(BiGitRepoForked as IconType)({ size: 16 })}
                         <span>{project.forks}</span>
                     </div>
                 </div>
