@@ -2,8 +2,11 @@
 import React from 'react';
 import {
     SiDocker,
+    SiEthereum,
     SiGit,
+    SiKubernetes,
     SiMysql,
+    SiNestjs,
     SiNextdotjs as SiNextDotJs,
     SiNodedotjs as SiNodeDotJs,
     SiPnpm,
@@ -11,6 +14,7 @@ import {
     SiReact,
     SiRedis,
     SiRust,
+    SiSolana,
     SiTailwindcss,
     SiTypescript,
     SiYarn,
@@ -147,6 +151,7 @@ export default async function Page() {
                     <ListItem icon={SiReact} text="React" />
                     <ListItem icon={SiNextDotJs} text="NextJs" />
                     <ListItem icon={SiNodeDotJs} text="NodeJs" />
+                    <ListItem icon={SiNestjs} text="NestJS" />
                     <ListItem icon={SiTypescript} text="TypeScript" />
                     <ListItem icon={SiPnpm} text="Pnpm" />
                     <ListItem icon={SiYarn} text="Yarn" />
@@ -154,8 +159,11 @@ export default async function Page() {
                     <ListItem icon={SiPostgresql} text="PostgreSQL" />
                     <ListItem icon={SiRedis} text="Redis" />
                     <ListItem icon={SiDocker} text="Docker" />
+                    <ListItem icon={SiKubernetes} text="Kubernetes" />
                     <ListItem icon={SiTailwindcss} text="TailwindCSS" />
                     <ListItem icon={SiRust} text="Rust" />
+                    <ListItem icon={SiSolana} text="Solana" />
+                    <ListItem icon={SiEthereum} text="Ethereum" />
                 </ul>
             </section>
             {/* <section>
