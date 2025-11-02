@@ -67,7 +67,12 @@ function AnimatedBars() {
 }
 
 export const SpotifyActivity = () => {
-    const { data } = useLanyard('315848583024869379');
+    const { data } = useLanyard('315848583024869379', {
+        api: {
+            hostname: 'api.lanyard.rest',
+            secure: true
+        }
+    });
 
     const trackId = data?.spotify?.track_id;
     const song = data?.spotify?.song;

@@ -17,7 +17,6 @@ import {
 } from 'react-icons/si';
 import { ListItem } from 'src/app/ListItem';
 import { PinnedRepo, ProjectCard } from 'src/app/ProjectCard';
-import { SpotifyActivity } from 'src/app/SpotifyActivity';
 import { differenceInYears } from 'date-fns';
 
 async function getData(): Promise<PinnedRepo[]> {
@@ -68,7 +67,6 @@ export default async function Page() {
                             <SiDiscord size={26} />
                         </a> */}
                     </div>
-                    <SpotifyActivity />
                 </div>
                 <h1 className="text-3xl font-bold">Hi! I'm Gustavo!</h1>
                 <p className="opacity-80">
