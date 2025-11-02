@@ -5,7 +5,6 @@ import {
     SiEthereum,
     SiGit,
     SiKubernetes,
-    SiMicroservices,
     SiMysql,
     SiNestjs,
     SiNextdotjs as SiNextDotJs,
@@ -20,6 +19,8 @@ import {
     SiTypescript,
     SiYarn,
 } from 'react-icons/si';
+import { FaAws } from 'react-icons/fa';
+import { TbApi, TbTopologyStarRing3 } from 'react-icons/tb';
 import { ListItem } from 'src/app/ListItem';
 import { PinnedRepo, ProjectCard } from 'src/app/ProjectCard';
 import { differenceInYears } from 'date-fns';
@@ -153,7 +154,8 @@ export default async function Page() {
                     <ListItem icon={SiNextDotJs} text="NextJs" />
                     <ListItem icon={SiNodeDotJs} text="NodeJs" />
                     <ListItem icon={SiNestjs} text="NestJS" />
-                    <ListItem icon={SiMicroservices} text="Microservices" />
+                    <ListItem icon={TbTopologyStarRing3} text="Microservices" />
+                    <ListItem icon={TbApi} text="gRPC" />
                     <ListItem icon={SiTypescript} text="TypeScript" />
                     <ListItem icon={SiPnpm} text="Pnpm" />
                     <ListItem icon={SiYarn} text="Yarn" />
@@ -162,6 +164,7 @@ export default async function Page() {
                     <ListItem icon={SiRedis} text="Redis" />
                     <ListItem icon={SiDocker} text="Docker" />
                     <ListItem icon={SiKubernetes} text="Kubernetes" />
+                    <ListItem icon={FaAws} text="AWS" />
                     <ListItem icon={SiTailwindcss} text="TailwindCSS" />
                     <ListItem icon={SiRust} text="Rust" />
                     <ListItem icon={SiSolana} text="Solana" />
