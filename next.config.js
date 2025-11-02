@@ -5,7 +5,6 @@ module.exports = {
         domains: ['i.scdn.co'],
     },
     experimental: {
-        appDir: true,
         typedRoutes: true,
     },
 };
