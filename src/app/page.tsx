@@ -76,19 +76,18 @@ export default async function Page() {
                 </div>
                 <h1 className="text-3xl font-bold">Hi! I'm Gustavo!</h1>
                 <p className="opacity-80">
-                    I'm a {age} years old software developer from Brazil. I'm
-                    really into full stack web development and problem solving
-                    in general.
+                    I'm a {age}-year-old software developer from Brazil specializing
+                    in full-stack web development and complex problem-solving.
                 </p>
             </div>
             <section className="space-y-4">
-                <h2 className="text-2xl font-bold">Things I do...</h2>
+                <h2 className="text-2xl font-bold">Projects</h2>
                 <p className="opacity-80">
-                    Most of the projects I've worked on are private, so I can't
-                    link their source code. During the pandemic, I focused on
-                    freelancing and haven't really contributed to open source
-                    but below are a few of my public projects. Not many for now
-                    but expect them to increase over time.
+                    The majority of my work involves proprietary projects with
+                    confidential source code. My focus during recent years has
+                    been on freelance development. Below are a selection of my
+                    public repositories, with additional projects to be published
+                    over time.
                 </p>
                 <div className="grid gap-2 sm:gap-4 sm:grid-cols-2">
                     {pinnedRepos.map((repo, i) => {
@@ -97,7 +96,7 @@ export default async function Page() {
                 </div>
                 <div className="space-y-2">
                     <p className="opacity-80">
-                        A few of the private projects I've worked on are:
+                        Select private projects include:
                     </p>
                     <ul className="space-y-2 list-disc opacity-80">
                         <div className="pl-12 space-y-2">
@@ -110,7 +109,7 @@ export default async function Page() {
                                 >
                                     Binance
                                 </a>{' '}
-                                crypto trading bot
+                                automated trading system
                             </li>
                             <li>
                                 <a
@@ -121,7 +120,7 @@ export default async function Page() {
                                 >
                                     CSGOEmpire
                                 </a>{' '}
-                                Withdraw/Deposit bot
+                                transaction automation system
                             </li>
                             <li>
                                 <a
@@ -132,21 +131,20 @@ export default async function Page() {
                                 >
                                     CSGORoll
                                 </a>{' '}
-                                Deposit bot
+                                deposit automation system
                             </li>
                         </div>
                     </ul>
                 </div>
 
                 <p className="opacity-80">
-                    Feel free to contact me on Discord if you have any
-                    questions!
+                    For inquiries, please reach out via Discord.
                 </p>
             </section>
             <section className="space-y-4">
-                <h2 className="text-2xl font-bold">Technologies I use</h2>
+                <h2 className="text-2xl font-bold">Technical Stack</h2>
                 <p className="opacity-80">
-                    These are a few of the technologies I use in my projects.
+                    Core technologies and tools utilized in my development work:
                 </p>
                 <ul className="grid grid-cols-3 gap-5 sm:grid-cols-4">
                     <ListItem icon={SiGit} text="Git" />
