@@ -28,7 +28,7 @@ export default function Page() {
             {/* Hero Section */}
             <section className="space-y-4">
                 <h1 className="text-4xl md:text-5xl font-bold font-mono">
-                    Hi, I'm Gustavo<span className="cursor-blink"></span>
+                    Hi, I&apos;m Gustavo<span className="cursor-blink"></span>
                 </h1>
                 <h2 className="text-2xl md:text-3xl font-semibold text-github-green font-mono">
                     Software Engineer • Systems Architect • Builder of Scalable
@@ -36,7 +36,7 @@ export default function Page() {
                 </h2>
                 <p className="text-lg text-gray-300 max-w-2xl">
                     5+ years shipping production systems. I design backends that
-                    don't break at 3 AM.
+                    don&apos;t break at 3 AM.
                 </p>
             </section>
 
@@ -45,9 +45,9 @@ export default function Page() {
                 <h2 className="text-3xl font-bold font-mono">About</h2>
                 <div className="space-y-4 text-gray-300 leading-relaxed">
                     <p>
-                        I'm a full-stack developer with a deep love for system
-                        design, distributed architecture, and making complex
-                        things feel simple.
+                        I&apos;m a full-stack developer with a deep love for
+                        system design, distributed architecture, and making
+                        complex things feel simple.
                     </p>
                     <p>
                         Co-founded a fintech startup (privacy-first, no details
@@ -100,8 +100,8 @@ export default function Page() {
                     Projects & Team Leadership
                 </h2>
                 <p className="text-lg text-gray-300 leading-relaxed">
-                    I don't just code — I ship products with distributed teams,
-                    tight deadlines, and zero drama.
+                    I don&apos;t just code — I ship products with distributed
+                    teams, tight deadlines, and zero drama.
                 </p>
                 <div className="space-y-4">
                     <div className="bg-github-card border border-github-card rounded-md p-6 space-y-4 hover:border-github-green transition-all duration-200">
@@ -124,7 +124,7 @@ export default function Page() {
 
                 <div className="space-y-2">
                     <p className="text-gray-400 italic font-mono text-sm">
-                        "I build things that work. Quietly. At scale."
+                        &quot;I build things that work. Quietly. At scale.&quot;
                     </p>
                 </div>
                 <div className="grid gap-4 md:grid-cols-2">
