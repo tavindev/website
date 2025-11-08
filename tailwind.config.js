@@ -4,19 +4,13 @@ module.exports = {
     theme: {
         extend: {
             colors: {
-                'blue-opaque': 'rgb(13 42 148 / 18%)',
-                gray: {
-                    0: '#fff',
-                    100: '#fafafa',
-                    200: '#eaeaea',
-                    300: '#999999',
-                    400: '#888888',
-                    500: '#666666',
-                    600: '#444444',
-                    700: '#333333',
-                    800: '#222222',
-                    900: '#111111',
-                },
+                'github-dark': '#0d1117',
+                'github-green': '#238636',
+                'github-light': '#f0f6fc',
+                'github-card': '#30363d',
+            },
+            fontFamily: {
+                mono: ['JetBrains Mono', 'monospace'],
             },
         },
         plugins: [require('@tailwindcss/typography')],

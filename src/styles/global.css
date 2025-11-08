@@ -2,23 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
 html {
     min-width: 360px;
     scroll-behavior: smooth;
-    font-family: Inter, ui-sans-serif;
-
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-weight: 400;
     font-size: 0.95rem;
-
-    @apply text-white subpixel-antialiased;
+    @apply text-[#f0f6fc] subpixel-antialiased;
 }
 
 body {
-    background: linear-gradient(180deg, transparent 0, #111 550px),
-        fixed 0 0 /20px 20px radial-gradient(#313131 1px, transparent 0),
-        fixed 10px 10px /20px 20px radial-gradient(#313131 1px, transparent 0);
-
-    @apply bg-gray-900;
+    background: linear-gradient(180deg, transparent 0, #0d1117 550px),
+        fixed 0 0 /20px 20px radial-gradient(#21262d 1px, transparent 0),
+        fixed 10px 10px /20px 20px radial-gradient(#21262d 1px, transparent 0);
+    @apply bg-[#0d1117];
 }
 
 #__next {
@@ -29,4 +28,15 @@ body {
 
 p {
     @apply leading-relaxed;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.cursor-blink::after {
+    content: '|';
+    animation: blink 1s infinite;
+    margin-left: 2px;
 }

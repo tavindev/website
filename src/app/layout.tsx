@@ -19,10 +19,10 @@ export default function RootLayout({
                     data-domain="tavin.dev"
                     src="https://datafa.st/js/script.js"
                 ></script>
-                <title>Gustavo</title>
+                <title>Gustavo - Software Engineer & Systems Architect</title>
                 <meta
                     name="description"
-                    content="I'm a 18 years old software engineer from Brazil. I'm really into full stack web development and problem solving in general."
+                    content="Software Engineer • Systems Architect • Builder of Scalable Things. 5+ years shipping production systems."
                 />
                 <link
                     rel="icon"
@@ -30,9 +30,9 @@ export default function RootLayout({
                     href="https://www.gravatar.com/avatar/05385faec6136dc4ca10e3729fca6c57?s=256&d=identicon&r=PG"
                 />
             </head>
-            <div className={`max-w-4xl p-5 mx-auto ${inter.className}`}>
-                {children}
-            </div>
+            <body className={inter.className}>
+                <div className="min-h-scree">{children}</div>
+            </body>
         </html>
     );
 }

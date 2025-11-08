@@ -1,42 +1,21 @@
-'use client';
+import React from 'react';
 
-import { AiOutlineStar } from 'react-icons/ai';
-import { BiGitRepoForked } from 'react-icons/bi';
-import type { IconType } from 'react-icons';
-
-export type PinnedRepo = {
-    owner: string;
-    repo: string;
+type ProjectCardProps = {
+    title: string;
     description: string;
-    language: string;
-    languageColor: string;
-    stars: string;
-    forks: string;
+    date: string;
 };
 
-export const ProjectCard: React.FC<PinnedRepo> = (project) => {
+export const ProjectCard: React.FC<ProjectCardProps> = ({ title, description, date }) => {
     return (
-        <a
-            href={`https://github.com/${project.owner}/${project.repo}`}
-            target="_blank"
-            rel="noreferrer"
-            className="bg-gray-800 py-4 px-5 space-y-3 border border-gray-600 rounded first-letter:cursor-pointer hover:scale-[1.02] duration-200 will-change-transform"
-        >
-            <div className="flex items-center justify-between">
-                <h3 className="font-bold">{project.repo}</h3>
-                <div className="flex items-center justify-center gap-2">
-                    <div className="flex items-center justify-center gap-1">
-                        {(AiOutlineStar as IconType)({ size: 16 })}
-                        <span>{project.stars}</span>
-                    </div>
-                    <div className="flex items-center justify-center gap-1">
-                        {(BiGitRepoForked as IconType)({ size: 16 })}
-                        <span>{project.forks}</span>
-                    </div>
-                </div>
+        <div className="bg-github-card border border-github-card rounded-md p-5 space-y-3 hover:border-github-green hover:-translate-y-1 transition-all duration-200">
+            <div className="flex items-start justify-between">
+                <h3 className="font-bold text-lg font-mono text-github-green">{title}</h3>
+                <span className="text-xs font-mono text-gray-400 bg-github-dark px-3 py-1 rounded border border-github-card whitespace-nowrap ml-2">
+                    {date}
+                </span>
             </div>
-            <div className="border-b border-gray-600" />
-            <p>{project.description}</p>
-        </a>
+            <p className="text-gray-300 text-sm leading-relaxed">{description}</p>
+        </div>
     );
 };
