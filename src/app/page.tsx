@@ -152,7 +152,7 @@ export default function Page() {
             <footer className="pt-8 pb-12 border-t border-github-card text-center text-gray-400 text-sm">
                 <p>
                     © 2025 Gustavo • Brazilian developer • Building in public •
-                    Português & English
+                    Português & English & Deutsch
                 </p>
             </footer>
         </main>
