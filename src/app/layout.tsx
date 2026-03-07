@@ -1,38 +1,66 @@
-import { Inter } from 'next/font/google';
-import '../styles/global.css';
+import { Inter, JetBrains_Mono } from 'next/font/google';
+import '@/styles/global.css';
+import { Nav } from '@/components/nav';
+import { Footer } from '@/components/footer';
+import type { Metadata } from 'next';
 
 const inter = Inter({
-    subsets: ['latin'],
+  subsets: ['latin'],
+  variable: '--font-inter',
 });
 
+const jetbrains = JetBrains_Mono({
+  subsets: ['latin'],
+  variable: '--font-jetbrains',
+});
+
+export const metadata: Metadata = {
+  title: {
+    default: 'tavin.dev',
+    template: '%s | tavin.dev',
+  },
+  description:
+    'Articles on DDD, CQRS, hexagonal architecture, and TypeScript backend patterns.',
+  metadataBase: new URL('https://tavin.dev'),
+  openGraph: {
+    title: 'tavin.dev',
+    description:
+      'Articles on DDD, CQRS, hexagonal architecture, and TypeScript backend patterns.',
+    url: 'https://tavin.dev',
+    siteName: 'tavin.dev',
+    locale: 'en_US',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    creator: '@tavindev',
+  },
+  alternates: {
+    types: {
+      'application/rss+xml': '/feed.xml',
+    },
+  },
+};
+
 export default function RootLayout({
-    children,
+  children,
 }: {
-    children: React.ReactNode;
+  children: React.ReactNode;
 }) {
-    return (
-        <html>
-            <head>
-                <script
-                    defer
-                    data-website-id="dfid_qOKTQ0rnv4b494JD9OnHY"
-                    data-domain="tavin.dev"
-                    src="https://datafa.st/js/script.js"
-                ></script>
-                <title>Gustavo - Software Engineer & Systems Architect</title>
-                <meta
-                    name="description"
-                    content="Software Engineer • Systems Architect • Builder of Scalable Things. 5+ years shipping production systems."
-                />
-                <link
-                    rel="icon"
-                    type="image/x-icon"
-                    href="https://www.gravatar.com/avatar/05385faec6136dc4ca10e3729fca6c57?s=256&d=identicon&r=PG"
-                />
-            </head>
-            <body className={inter.className}>
-                <div className="min-h-scree">{children}</div>
-            </body>
-        </html>
-    );
+  return (
+    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`} suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}})()`,
+          }}
+        />
+      </head>
+      <body className="font-sans min-h-screen flex flex-col">
+        <Nav />
+        <main className="flex-1">{children}</main>
+        <Footer />
+      </body>
+    </html>
+  );
 }

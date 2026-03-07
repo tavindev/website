@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0">
+    <channel>
+        <title>Gustavo — tavin.dev</title>
+        <link>https://tavin.dev</link>
+        <description>Deep technical articles on DDD, CQRS, hexagonal architecture, and TypeScript backend patterns.</description>
+        <lastBuildDate>Sat, 07 Mar 2026 23:09:21 GMT</lastBuildDate>
+        <docs>https://validator.w3.org/feed/docs/rss2.html</docs>
+        <generator>https://github.com/jpmonette/feed</generator>
+        <language>en</language>
+        <copyright>2026 Gustavo</copyright>
+        <item>
+            <title><![CDATA[When AI Agents Meet Real Engineering]]></title>
+            <link>https://tavin.dev/blog/ai-agents-meet-real-engineering</link>
+            <guid>https://tavin.dev/blog/ai-agents-meet-real-engineering</guid>
+            <pubDate>Sat, 07 Mar 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[AI coding agents aren't exposing model limits — they're exposing architecture debt. Why good boundaries matter more than better prompts.]]></description>
+        </item>
+        <item>
+            <title><![CDATA[CQRS Beyond the Basics: When Queries Should Skip Your Domain Model]]></title>
+            <link>https://tavin.dev/blog/cqrs-beyond-basics</link>
+            <guid>https://tavin.dev/blog/cqrs-beyond-basics</guid>
+            <pubDate>Sun, 01 Mar 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Command handlers orchestrate domain logic through ports. Query handlers bypass it entirely. The asymmetry is intentional — here's why and how.]]></description>
+        </item>
+        <item>
+            <title><![CDATA[Hexagonal Architecture in NestJS: Ports, Adapters, and the Testing Payoff]]></title>
+            <link>https://tavin.dev/blog/hexagonal-nestjs</link>
+            <guid>https://tavin.dev/blog/hexagonal-nestjs</guid>
+            <pubDate>Sun, 22 Feb 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[How to structure a NestJS module as a bounded context with ports, adapters, and the concrete testing advantages this unlocks.]]></description>
+        </item>
+        <item>
+            <title><![CDATA[Two Ways to Model Aggregates in TypeScript]]></title>
+            <link>https://tavin.dev/blog/aggregate-modeling</link>
+            <guid>https://tavin.dev/blog/aggregate-modeling</guid>
+            <pubDate>Sun, 15 Feb 2026 00:00:00 GMT</pubDate>
+            <description><![CDATA[Mutable state machines vs immutable copy-on-write — two real patterns for DDD aggregates in TypeScript, their trade-offs, and when to use each.]]></description>
+        </item>
+    </channel>
+</rss>

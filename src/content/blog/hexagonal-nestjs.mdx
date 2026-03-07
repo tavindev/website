@@ -1,0 +1,378 @@
+---
+title: "Hexagonal Architecture in NestJS: Ports, Adapters, and the Testing Payoff"
+slug: hexagonal-nestjs
+description: "How to structure a NestJS module as a bounded context with ports, adapters, and the concrete testing advantages this unlocks."
+date: 2026-02-22
+tags:
+  - architecture
+  - nestjs
+  - testing
+---
+
+Hexagonal architecture (ports and adapters) is one of those patterns that sounds academic until you feel the payoff. In NestJS specifically, the payoff is **test speed**. When your command handler tests run in under 10ms with zero database, zero framework, and zero mocking libraries, the architecture has earned its keep.
+
+Here's how I structure it, with real patterns from production NestJS codebases.
+
+## The folder structure
+
+Every bounded context follows the same three-layer layout:
+
+```
+src/orders/
+  core/
+    entities/           # domain aggregates
+    events/             # domain events
+    exceptions/         # domain-specific errors
+    ports/              # port interfaces + Symbol tokens
+    value-objects/      # Email, Money, etc.
+  application/
+    commands/           # CQRS command handlers
+    queries/            # CQRS query handlers
+    event-handlers/     # domain event subscribers
+    services/           # application services
+  infra/
+    repositories/       # Prisma adapter, in-memory adapter
+    adapters/           # cross-context adapters (ACL)
+    controllers/        # HTTP controllers
+```
+
+The dependency rule: `core/` imports nothing from `application/` or `infra/`. `application/` imports from `core/` but not `infra/`. `infra/` imports from both.
+
+This isn't just organization — it's a compile-time guarantee. If your entity file imports `PrismaService`, something is wrong and your IDE will show it.
+
+## Ports: Symbol token + interface
+
+A port is two things co-located in one file inside `core/ports/`:
+
+```ts title="core/ports/order.repository.ts"
+import type { Order } from '../entities/order.entity';
+
+export const ORDER_REPOSITORY = Symbol('ORDER_REPOSITORY');
+
+export interface IOrderRepository {
+  save(order: Order): Promise<void>;
+  findById(id: string): Promise<Order | null>;
+  findByCustomerId(
+    customerId: string,
+    pagination: { page: number; limit: number },
+  ): Promise<{ orders: Order[]; total: number }>;
+}
+```
+
+The `Symbol` is the NestJS DI token. The `interface` is the contract. They're co-located because they're always used together — you never import one without the other.
+
+Why a `Symbol` and not a string token? Symbols are globally unique. Two modules can both define an `ORDER_REPOSITORY` Symbol and they'll never collide. String tokens like `'ORDER_REPOSITORY'` will.
+
+## Adapter variant 1: Prisma (production)
+
+```ts title="infra/repositories/prisma-order.repository.ts"
+@Injectable()
+export class PrismaOrderRepository implements IOrderRepository {
+  constructor(
+    @InjectTransactionHost('orders')
+    private readonly txHost: TransactionHost,
+    private readonly deferredEvents: DeferredEventBus,
+  ) {}
+
+  @Transactional('orders')
+  async save(order: Order): Promise<void> {
+    const data = order.toPersistence();
+    await this.txHost.tx.order.upsert({
+      where: { orderId: data.orderId },
+      create: data,
+      update: data,
+    });
+
+    for (const event of order.getUncommittedEvents()) {
+      this.deferredEvents.publish(event);
+    }
+    order.uncommit();
+  }
+
+  async findById(id: string): Promise<Order | null> {
+    const row = await this.txHost.tx.order.findUnique({
+      where: { orderId: id },
+    });
+    return row ? this.toDomain(row) : null;
+  }
+
+  private toDomain(row: PrismaOrder): Order {
+    return Order.from({
+      ...row,
+      total: row.total, // Prisma stores as string
+    });
+  }
+}
+```
+
+Key details:
+
+- `implements IOrderRepository` — the compiler enforces the contract. If you add a method to the port interface and forget to implement it here, the build breaks.
+- `toDomain()` is the anti-corruption boundary. Prisma's row type never leaks into the domain layer.
+- `@Transactional('orders')` wraps the save in a CLS-scoped transaction. Domain events are deferred until after the commit.
+
+## Adapter variant 2: in-memory (tests)
+
+```ts title="infra/repositories/in-memory-order.repository.ts"
+export class InMemoryOrderRepository implements IOrderRepository {
+  orders: Order[] = [];
+
+  async save(order: Order): Promise<void> {
+    const idx = this.orders.findIndex(
+      (o) => o.orderId === order.orderId,
+    );
+    if (idx >= 0) {
+      this.orders[idx] = order;
+    } else {
+      this.orders.push(order);
+    }
+  }
+
+  async findById(id: string): Promise<Order | null> {
+    return this.orders.find((o) => o.orderId === id) ?? null;
+  }
+
+  async findByCustomerId(
+    customerId: string,
+    pagination: { page: number; limit: number },
+  ): Promise<{ orders: Order[]; total: number }> {
+    const filtered = this.orders.filter(
+      (o) => o.customerId === customerId,
+    );
+    return {
+      orders: filtered.slice(
+        (pagination.page - 1) * pagination.limit,
+        pagination.page * pagination.limit,
+      ),
+      total: filtered.length,
+    };
+  }
+
+  clear(): void {
+    this.orders = [];
+  }
+}
+```
+
+No decorators, no framework imports, no database. It's a plain TypeScript class that implements the same interface. The `orders` array is public so tests can assert on the stored state directly.
+
+## Adapter variant 3: cross-context (anti-corruption layer)
+
+This is where hexagonal architecture really shines. When module A needs data from module B, it **doesn't import module B's entities or repositories**. Instead:
+
+1. Module A defines a port in its own `core/ports/`, using its own vocabulary.
+2. An adapter in module A's `infra/adapters/` translates across the boundary.
+
+```ts title="core/ports/order-billing.port.ts"
+export const ORDER_BILLING_PORT = Symbol('ORDER_BILLING_PORT');
+
+export interface IOrderBillingPort {
+  getBalance(customerId: string): Promise<Decimal>;
+  freezeBalance(params: {
+    orderId: string;
+    customerId: string;
+    amount: Decimal;
+  }): Promise<void>;
+  settleOrder(params: {
+    orderId: string;
+    customerId: string;
+    amount: Decimal;
+    fee: Decimal;
+  }): Promise<void>;
+}
+```
+
+The port speaks the **order context's language** — `orderId`, `freezeBalance`, `settleOrder`. It doesn't expose the billing module's internal concepts (ledger entries, journal posting, account codes).
+
+The adapter translates:
+
+```ts title="infra/adapters/order-billing.adapter.ts"
+@Injectable()
+export class OrderBillingAdapter implements IOrderBillingPort {
+  constructor(
+    @Inject(BILLING_SERVICE)
+    private readonly billing: IBillingService,
+  ) {}
+
+  async getBalance(customerId: string): Promise<Decimal> {
+    return this.billing.getBalance(
+      AccountQuery.customerBalance(customerId),
+    );
+  }
+
+  async settleOrder(params: {
+    orderId: string;
+    customerId: string;
+    amount: Decimal;
+    fee: Decimal;
+  }): Promise<void> {
+    await this.billing.postTransaction({
+      externalId: params.orderId,
+      entries: [
+        {
+          account: AccountQuery.customerBalance(params.customerId),
+          amount: params.amount.neg(),
+        },
+        {
+          account: AccountQuery.revenue(),
+          amount: params.fee,
+        },
+        {
+          account: AccountQuery.providerPayable(),
+          amount: params.amount.sub(params.fee),
+        },
+      ],
+    });
+  }
+}
+```
+
+The adapter knows about both worlds — it maps the order port's vocabulary to the billing service's API. The order module never sees `AccountQuery`, `postTransaction`, or ledger entries. If the billing module changes its internal API, only this adapter needs updating.
+
+For simpler cross-context calls, the adapter often uses the CQRS `QueryBus` instead of a direct service injection:
+
+```ts title="infra/adapters/order-customer.adapter.ts"
+@Injectable()
+export class OrderCustomerAdapter implements IOrderCustomerPort {
+  constructor(private readonly queryBus: QueryBus) {}
+
+  async getCustomersByIds(
+    ids: string[],
+  ): Promise<CustomerSummary[]> {
+    return this.queryBus.execute(
+      new GetCustomersByIdsQuery(ids),
+    );
+  }
+}
+```
+
+The `QueryBus` ensures the two modules don't import each other. Module boundaries stay clean.
+
+## Module as bounded context boundary
+
+The NestJS module is where port-to-adapter bindings live:
+
+```ts title="orders.module.ts"
+@Module({
+  imports: [CqrsModule, BillingModule],
+  providers: [
+    ...commandHandlers,
+    ...queryHandlers,
+    ...eventHandlers,
+    {
+      provide: ORDER_REPOSITORY,
+      useClass: PrismaOrderRepository,
+    },
+    {
+      provide: ORDER_BILLING_PORT,
+      useClass: OrderBillingAdapter,
+    },
+    {
+      provide: ORDER_CUSTOMER_PORT,
+      useClass: OrderCustomerAdapter,
+    },
+  ],
+  exports: [ORDER_REPOSITORY],
+})
+export class OrdersModule {}
+```
+
+Swapping adapters is a one-line change. In tests, you don't even use the module — you instantiate handlers directly.
+
+For conditional adapter selection (e.g., a stub payment provider in non-production):
+
+```ts
+{
+  provide: PAYMENT_PROVIDER_PORT,
+  useFactory: (
+    config: ConfigService,
+    stripe: StripeAdapter,
+    stub?: StubPaymentAdapter,
+  ) => {
+    if (stub && config.get('NODE_ENV') !== 'production') {
+      return stub;
+    }
+    return stripe;
+  },
+  inject: [
+    ConfigService,
+    StripeAdapter,
+    { token: StubPaymentAdapter, optional: true },
+  ],
+}
+```
+
+## The testing payoff
+
+Here's where it pays off. Command handler tests with zero framework:
+
+```ts title="place-order.handler.spec.ts"
+describe('PlaceOrderHandler', () => {
+  let handler: PlaceOrderHandler;
+  let orderRepo: InMemoryOrderRepository;
+  let billing: IOrderBillingPort;
+
+  beforeEach(() => {
+    orderRepo = new InMemoryOrderRepository();
+    billing = {
+      getBalance: async () => new Decimal('1000'),
+      freezeBalance: async () => undefined,
+      settleOrder: async () => undefined,
+    };
+    handler = new PlaceOrderHandler(orderRepo, billing);
+  });
+
+  it('creates an order and freezes the balance', async () => {
+    const freezeSpy = vi.spyOn(billing, 'freezeBalance');
+
+    const result = await handler.execute(
+      new PlaceOrderCommand('customer-1', [
+        { productId: 'p1', quantity: 2, price: new Decimal('25') },
+      ]),
+    );
+
+    expect(result.orderId).toBeDefined();
+    expect(orderRepo.orders).toHaveLength(1);
+    expect(orderRepo.orders[0].status).toBe(OrderStatus.PENDING);
+    expect(freezeSpy).toHaveBeenCalledWith({
+      orderId: result.orderId,
+      customerId: 'customer-1',
+      amount: new Decimal('50'),
+    });
+  });
+});
+```
+
+No `TestingModule.compile()`. No database. No `beforeAll` setup that takes 2 seconds. Just plain objects.
+
+The `InMemoryOrderRepository` is a real implementation of the port interface — it behaves correctly for find/save operations. The billing port is an inline object literal because we only need to verify it was called with the right arguments.
+
+These tests run in under 10ms. You can have hundreds of them and your test suite stays fast.
+
+### The asymmetry with query tests
+
+Query handlers intentionally skip this pattern. They inject `PrismaService` directly and run `findMany` with `select` projections — no repository, no entity rehydration. So query tests are integration tests that need a real database.
+
+This is intentional, not lazy. Query tests need to verify the actual SQL/Prisma query returns the right shape. Mocking Prisma would be testing your mocks, not your queries.
+
+```ts title="list-orders.handler.spec.ts"
+// This IS an integration test — needs a test database
+describe('ListOrdersHandler', () => {
+  let handler: ListOrdersHandler;
+  let prisma: PrismaService;
+
+  beforeAll(async () => {
+    const module = await Test.createTestingModule({
+      imports: [PrismaModule],
+      providers: [ListOrdersHandler],
+    }).compile();
+
+    handler = module.get(ListOrdersHandler);
+    prisma = module.get(PrismaService);
+  });
+
+  // seed data, run query, assert shape
+});
+```
+
+The testing asymmetry is a feature: **commands test domain logic fast (in-memory), queries test data access correctly (real DB)**. Trying to unify them with one approach makes both worse.

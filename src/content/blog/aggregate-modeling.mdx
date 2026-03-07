@@ -1,0 +1,356 @@
+---
+title: "Two Ways to Model Aggregates in TypeScript"
+slug: aggregate-modeling
+description: "Mutable state machines vs immutable copy-on-write — two real patterns for DDD aggregates in TypeScript, their trade-offs, and when to use each."
+date: 2026-02-15
+tags:
+  - ddd
+  - typescript
+---
+
+Every DDD aggregate in TypeScript needs to solve the same problems: enforce invariants, emit domain events, serialize to persistence, and rehydrate from the database. But there are two fundamentally different shapes this can take.
+
+I've shipped both patterns in the same codebase. Here's what each looks like, when to use which, and the subtle gotchas you'll only discover in production.
+
+## The `create` / `from` duality
+
+Both patterns share one structural decision: **two static factory methods, not a public constructor**.
+
+- `create()` — builds a new aggregate. Validates input, sets initial state, emits a domain event.
+- `from()` — rehydrates from persistence. Trusts the data (it came from your own database), skips validation.
+
+```ts title="order.entity.ts"
+export class Order extends AggregateRoot {
+  private constructor(private readonly props: OrderProps) {
+    super();
+  }
+
+  static create(params: { customerId: string; items: LineItem[] }): Order {
+    const order = new Order({
+      orderId: createId(),
+      customerId: params.customerId,
+      items: params.items,
+      status: OrderStatus.PENDING,
+      total: new Decimal('0'),
+    });
+    order.apply(new OrderCreatedEvent(order.props.orderId));
+    return order;
+  }
+
+  static from(data: OrderPersistence): Order {
+    return new Order({
+      ...data,
+      total: new Decimal(data.total), // string → Decimal
+    });
+  }
+}
+```
+
+The `private constructor` forces all callers through one of these two paths. No ambiguity about whether you're creating or rehydrating.
+
+Value objects follow the same split:
+
+```ts title="email.ts"
+export class Email {
+  private constructor(public readonly value: string) {}
+
+  static create(raw: string): Email {
+    const normalized = raw.trim().toLowerCase();
+    if (!normalized.includes('@') || !normalized.includes('.')) {
+      throw new InvalidEmailException(raw);
+    }
+    return new Email(normalized);
+  }
+
+  static from(value: string): Email {
+    return new Email(value); // trusted — came from our DB
+  }
+}
+```
+
+`create()` validates and normalizes. `from()` trusts. This matters because rehydrating 10,000 entities from the database shouldn't re-run email validation on data you already validated on the way in.
+
+## Pattern A: mutable state machine
+
+This is the natural fit for aggregates with a lifecycle — entities that transition through states and need guards at each step.
+
+```ts title="order.entity.ts"
+type OrderProps = {
+  orderId: string;
+  customerId: string;
+  status: OrderStatus;
+  total: Decimal;
+  items: LineItem[];
+};
+
+export type OrderPersistence = {
+  orderId: string;
+  customerId: string;
+  status: OrderStatus;
+  total: string; // Decimal serialized
+  items: LineItemPersistence[];
+};
+
+export class Order extends AggregateRoot {
+  private constructor(private readonly props: OrderProps) {
+    super();
+  }
+
+  get orderId(): string {
+    return this.props.orderId;
+  }
+
+  get status(): OrderStatus {
+    return this.props.status;
+  }
+
+  // Guard → mutate → emit
+  confirm(): void {
+    if (this.props.status !== OrderStatus.PENDING) {
+      throw new InvalidOrderOperationException(
+        this.props.orderId,
+        'confirm',
+        this.props.status,
+      );
+    }
+    this.props.status = OrderStatus.CONFIRMED;
+    this.apply(
+      new OrderConfirmedEvent({
+        orderId: this.props.orderId,
+        customerId: this.props.customerId,
+      }),
+    );
+  }
+
+  cancel(): void {
+    if (this.props.status === OrderStatus.SHIPPED) {
+      throw new InvalidOrderOperationException(
+        this.props.orderId,
+        'cancel',
+        this.props.status,
+      );
+    }
+    this.props.status = OrderStatus.CANCELLED;
+    this.apply(new OrderCancelledEvent({ orderId: this.props.orderId }));
+  }
+
+  // Serialization boundary: Decimal → string
+  toPersistence(): OrderPersistence {
+    return {
+      ...this.props,
+      total: this.props.total.toString(),
+      items: this.props.items.map((i) => i.toPersistence()),
+    };
+  }
+
+  static from(data: OrderPersistence): Order {
+    return new Order({
+      ...data,
+      total: new Decimal(data.total),
+      items: data.items.map(LineItem.from),
+    });
+  }
+
+  static create(params: { customerId: string; items: LineItem[] }): Order {
+    const total = params.items.reduce(
+      (sum, i) => sum.add(i.subtotal),
+      new Decimal('0'),
+    );
+    const order = new Order({
+      orderId: createId(),
+      ...params,
+      status: OrderStatus.PENDING,
+      total,
+    });
+    order.apply(new OrderCreatedEvent(order.props.orderId));
+    return order;
+  }
+}
+```
+
+The key properties:
+
+1. **All state behind `private readonly props`** — external code reads through getters, never mutates directly.
+2. **Guard → mutate → emit** — every domain method checks the current state, throws if invalid, then mutates and emits an event. The state machine is explicit.
+3. **`toPersistence()` as the serialization seam** — `Decimal` lives exclusively in the domain layer. The moment data crosses any boundary (database, event, API response), it becomes `string`.
+4. **Two-phase transitions** — some operations need `startShipping()` → (call external API) → `ship()`. The intermediate state (`SHIPPING`) prevents concurrent operations.
+
+### When it fits
+
+Mutable state machines work when your aggregate has a **lifecycle with explicit transitions**. Orders, payments, cards, deposits — anything that goes through states and needs guards.
+
+## Pattern B: immutable copy-on-write
+
+Some aggregates are more like a bag of attributes than a state machine. They have fields that change independently, no meaningful state transitions, and the guards are simple (or nonexistent).
+
+```ts title="account.entity.ts"
+export class Account extends AggregateRoot {
+  readonly accountId: string;
+  readonly name: string;
+  readonly email: Email;
+  readonly apiKey: ApiKey | null;
+  readonly webhookUrl: string | null;
+
+  private constructor(data: {
+    accountId: string;
+    name: string;
+    email: Email;
+    apiKey: ApiKey | null;
+    webhookUrl: string | null;
+  }) {
+    super();
+    this.accountId = data.accountId;
+    this.name = data.name;
+    this.email = data.email;
+    this.apiKey = data.apiKey;
+    this.webhookUrl = data.webhookUrl;
+  }
+
+  static create(data: {
+    name: string;
+    email: Email;
+    passwordHash: string;
+  }): Account {
+    const account = new Account({
+      accountId: createId(),
+      name: data.name,
+      email: data.email,
+      apiKey: null,
+      webhookUrl: null,
+    });
+    account.apply(
+      new AccountRegisteredEvent(
+        account.accountId,
+        account.name,
+        account.email.value,
+      ),
+    );
+    return account;
+  }
+
+  static from(data: {
+    accountId: string;
+    name: string;
+    email: Email;
+    apiKey: ApiKey | null;
+    webhookUrl: string | null;
+  }): Account {
+    return new Account(data);
+  }
+
+  // Copy-on-write: return a new instance
+  withName(name: string): Account {
+    return new Account({ ...this, name });
+  }
+
+  withApiKey(apiKey: ApiKey): Account {
+    return new Account({ ...this, apiKey });
+  }
+
+  withWebhookUrl(url: string): Account {
+    const updated = new Account({ ...this, webhookUrl: url });
+    updated.apply(
+      new AccountWebhookConfiguredEvent(this.accountId, url),
+    );
+    return updated;
+  }
+}
+```
+
+The key differences from Pattern A:
+
+1. **All fields are `readonly` on the class** — no `props` bag, no getters needed. The object itself is the data.
+2. **`with*` methods return new instances** — `{ ...this }` works because property names match constructor params.
+3. **No `toPersistence()`** — the repository reads `readonly` fields directly. There's nothing to serialize because there's no private props bag.
+4. **Events on the *new* instance** — in `withWebhookUrl`, the event is applied to `updated`, not `this`. If you forget to hold the return value, the event is silently lost.
+
+### The `with*` gotcha
+
+```ts
+// Bug: event is lost, account unchanged
+account.withWebhookUrl('https://example.com/webhooks');
+
+// Correct: capture the new instance
+account = account.withWebhookUrl('https://example.com/webhooks');
+```
+
+This is TypeScript — there's no compile-time warning if you discard the return value. In a mutable entity, `account.setWebhookUrl(url)` mutates in place and you can't miss it. With copy-on-write, the caller must remember to capture the return.
+
+### When it fits
+
+Immutable copy-on-write works when your aggregate is **mostly a value container** — fields that change independently, no complex state machine, relatively few transitions. Accounts, profiles, configurations.
+
+## `toPersistence()` and the Decimal boundary
+
+One consistent rule regardless of pattern: **`Decimal` never crosses the domain boundary**.
+
+```ts
+// Domain layer: Decimal
+total: new Decimal('149.99')
+
+// Persistence layer: string
+total: '149.99'
+
+// toPersistence():
+total: this.props.total.toString()
+
+// from():
+total: new Decimal(data.total)
+```
+
+Events follow the same rule. When serializing events for replay or cross-service transport:
+
+```ts
+class OrderConfirmedEvent {
+  serialize() {
+    return { amount: this.amount.toString() };
+  }
+
+  static deserialize(payload: Record<string, unknown>) {
+    return new OrderConfirmedEvent({
+      amount: new Decimal(payload.amount as string),
+    });
+  }
+}
+```
+
+The boundary is always explicit. `toString()` on the way out, `new Decimal()` on the way in.
+
+## Choosing between the two
+
+| Dimension | Mutable state machine | Immutable copy-on-write |
+|---|---|---|
+| Best for | Entities with lifecycle states | Entities with independent fields |
+| State changes | In-place mutation + event | Return new instance + event |
+| Invariant guards | Status checks before mutation | Minimal or none |
+| Serialization | Explicit `toPersistence()` | Repository reads fields directly |
+| Event risk | Forgetting to emit (easy to audit) | Forgetting to capture return value (silent bug) |
+| Concurrency | Natural two-phase transitions | Needs external locking |
+
+In practice, most codebases have both. Lifecycle entities are mutable state machines. Configuration/profile entities are immutable. The important thing is to be **consistent within each aggregate** — don't mix `with*` methods and in-place mutation on the same entity.
+
+## Value objects with the same duality
+
+The `create`/`from` pattern scales down to value objects:
+
+```ts title="api-key.ts"
+export class ApiKey {
+  private constructor(public readonly value: string) {}
+
+  static generate(): { apiKey: ApiKey; rawValue: string } {
+    const rawValue = `key_${createId()}`;
+    return {
+      apiKey: new ApiKey(hashKey(rawValue)),
+      rawValue,
+    };
+  }
+
+  static fromHash(hash: string): ApiKey {
+    return new ApiKey(hash);
+  }
+}
+```
+
+`ApiKey` doesn't use `create`/`from` — it uses `generate`/`fromHash`. The naming reflects the asymmetry: the raw key is only ever returned once (from `generate()`), and what's stored is always the hash. The names should communicate the intent, not follow a rigid convention.
+
+The pattern is the same though: one path creates something new (with side effects like hashing), another path rehydrates from trusted storage.

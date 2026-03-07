@@ -43,3 +43,7 @@ yarn-error.log*
 
 robots.txt
 sitemap.xml
+
+# Velite
+.velite
+public/static

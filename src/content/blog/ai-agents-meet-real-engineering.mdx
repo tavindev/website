@@ -1,0 +1,133 @@
+---
+title: "When AI Agents Meet Real Engineering"
+slug: ai-agents-meet-real-engineering
+description: "AI coding agents aren't exposing model limits — they're exposing architecture debt. Why good boundaries matter more than better prompts."
+date: 2026-03-07
+tags:
+  - architecture
+  - ai
+draft: false
+---
+
+<figure className="my-8">
+  <img
+    src="/static/articles/ai-agents-meet-real-engineering/hero.jpg"
+    alt="Hero"
+    className="w-full rounded-xl border border-neutral-200"
+  />
+</figure>
+
+This essay is about software architecture, not prompting tricks.
+
+It is written for engineers who care about system boundaries, infrastructure abstraction, production-like local environments, and the mechanics of delegation. If your model of AI-assisted development begins and ends with "vibe coding," this will probably feel like it is discussing a different discipline entirely. That is intentional.
+
+The interesting question is not whether a model can generate a function, scaffold a service, or passably autocomplete a refactor. The interesting question is whether an agent can participate in real engineering work inside a non-trivial system without constantly collapsing under ambiguity, hidden coupling, and infrastructure leakage.
+
+That question turns out to have much less to do with the model than most people think.
+
+AI coding agents are not exposing model limits. They're exposing architecture debt.
+
+Most developers try an agent, get mediocre code back, and conclude the tooling is overhyped. It doesn't understand the codebase, it writes code they have to rewrite anyway, and in the end it feels like autocomplete with better marketing.
+
+Sometimes that critique is fair. But in a surprising number of cases, the model is not the main constraint. The real constraint is that most codebases are architected in ways that make delegation impossible. When business logic is tangled up with cloud SDKs, framework details, and one-off infrastructure assumptions, an agent has no stable seam to work with. It cannot reliably extend the system because the system itself was never designed to be extended cleanly.
+
+---
+
+## The real problem
+
+Take a common example: two services communicating through SNS and SQS.
+
+Most teams wire the AWS SDK directly into the service layer and call that pragmatism. The problem shows up later, when they want to run the platform locally and discover they can't, because SNS does not exist on a laptop. At that point the only remaining options are bad ones:
+
+- mock the event system and stop testing the real interaction
+- deploy every change to a shared environment and wait for feedback
+
+Both are symptoms of the same architectural decision: infrastructure was allowed to leak into business logic.
+
+<figure className="my-8">
+  <img
+    src="/static/articles/ai-agents-meet-real-engineering/coupled-vs-decoupled.svg"
+    alt="Diagram comparing tightly coupled infrastructure-dependent code with decoupled architecture"
+    className="w-full rounded-xl border border-neutral-200 bg-white"
+  />
+</figure>
+
+If the service calls `sns.publish()` directly, the code is not really modeling "publish an event." It is modeling "publish an event through Amazon's SDK from this exact environment," which is a much narrower and more fragile thing. That is not an implementation detail sitting harmlessly at the edge of the system. It is the architecture.
+
+Once that choice is made, every supposedly simple change gets more expensive. Local development gets worse, integration testing slows down, and refactors become riskier. AI agents also perform badly, not because they are incapable in the abstract, but because they are being asked to operate inside a codebase with no clean boundaries. That is the important point: bad architecture does not just hurt maintainability. It destroys delegatability.
+
+---
+
+## Why good boundaries make agents useful
+
+Put that event flow behind an `EventPublisher` interface and the shape of the problem changes immediately.
+
+Now "publish an event" becomes a stable domain capability instead of a vendor-specific call path. SNS is one adapter, Redis can be another, and an in-memory event bus can be a third. The business logic stays in one place while infrastructure becomes swappable, which is exactly the property you need if you want both fast local feedback and reliable delegation.
+
+<figure className="my-8">
+  <img
+    src="/static/articles/ai-agents-meet-real-engineering/adapter-pattern.svg"
+    alt="Adapter pattern diagram showing domain interfaces and multiple infrastructure implementations"
+    className="w-full rounded-xl border border-neutral-200 bg-white"
+  />
+</figure>
+
+That is where agents become useful, because agents are good at implementing seams but bad at deciding where the seams should be.
+
+If you hand an agent a clean task like "implement `EventPublisher` with Redis for local development," it will usually do solid work because the job is bounded. The interface already encodes the architectural decision, so the agent can focus on execution. If you hand the same agent a codebase full of direct SNS calls scattered across services, the task changes completely. Now it has to infer your domain model, decide which logic is business logic versus infrastructure, invent the right abstraction, and refactor toward it. That is where agents become noisy, expensive, and wrong.
+
+So the problem is not that the model is stupid. The problem is that your architecture is asking it to be a software designer when what you actually need is an implementation partner. You still own the modeling work: you decide what should stay stable, which details belong behind adapters, and what a clean interface looks like. That part does not go away.
+
+---
+
+## Where the leverage actually is
+
+There is too much focus in AI discourse on one-shot generation, as if the goal were to type a prompt and receive production-ready code in one pass. That is not the real unlock. The real unlock is iterative execution inside a well-structured system.
+
+In my case, the agent did not magically produce a perfect environment on the first try. It wrote code, and then we ran into version mismatches, missing Docker context files, network issues between containers, TLS problems, port conflicts, and startup sequencing bugs. None of those issues were conceptually hard, but all of them were tedious, and together they required repeated rebuilds, context retention, and a willingness to keep grinding.
+
+That is exactly the kind of work agents are good at. They do not get bored on the eighth rebuild, lose track of which config file changed three iterations ago, or need to reload the whole problem into working memory every time a different service fails. They are excellent at staying in the loop with you while the system gradually comes together.
+
+They still need supervision, though. When the agent tried to place infrastructure-specific logic in the service layer, I pushed it back into the adapter. When it blurred a domain concern with a deployment concern, I corrected the boundary. The agent was useful not because it knew the right architecture on its own, but because it could row quickly once the direction was clear.
+
+You steer. The agent rows.
+
+That is a much more realistic and much more powerful model than "the AI replaces engineering."
+
+---
+
+## This changes the economics of good engineering
+
+None of the underlying ideas are new. Interfaces, adapters, dependency inversion, production-like local environments, and treating infrastructure as a detail rather than a foundation have all been part of good engineering for decades.
+
+What changed is the cost of doing them well. The argument against clean boundaries used to be speed: teams told themselves they did not have time to design the abstraction, add the adapter, and maintain both local and cloud-backed implementations. That argument is much weaker now, because an agent can help write the interface, scaffold the adapter, wire the local environment, and grind through the inevitable integration issues. The architectural thinking still has to come from you, but the implementation cost has dropped hard.
+
+That means the old shortcut of coupling business logic directly to infrastructure no longer saves nearly as much time as people think. In many cases it now costs more, because you are sacrificing the very thing that makes AI assistance compound: clean, explicit boundaries.
+
+Good architecture turns AI from autocomplete into leverage.
+
+Bad architecture turns AI into cleanup.
+
+---
+
+## What to do now
+
+If your codebase feels hostile to AI agents, do not start by blaming the model. Start by inspecting the seams.
+
+- Find the places where business logic talks directly to infrastructure.
+- Introduce interfaces around domain capabilities, not vendor APIs.
+- Push cloud, framework, and transport concerns into adapters.
+- Make local implementations real enough to exercise actual behavior, not mock theater.
+- Give the agent bounded tasks inside those seams.
+
+You do not need to boil the ocean. Start with the parts of the system that are slowing you down most: event publishing, repository access, storage, external APIs, and background jobs.
+
+The payoff is immediate, because the same abstraction that makes local development faster also makes refactoring cheaper, testing more honest, and AI delegation dramatically more effective. The codebase gets easier for humans to change and easier for agents to assist with, and that is the compounding effect.
+
+AI did not make software design obsolete.
+
+It made software design more leveraged.
+
+The teams that understand that will get real acceleration out of agents.
+
+The teams that do not will keep handing agents a pile of architecture debt and calling the output disappointing.

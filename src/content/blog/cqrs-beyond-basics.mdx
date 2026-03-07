@@ -1,0 +1,325 @@
+---
+title: "CQRS Beyond the Basics: When Queries Should Skip Your Domain Model"
+slug: cqrs-beyond-basics
+description: "Command handlers orchestrate domain logic through ports. Query handlers bypass it entirely. The asymmetry is intentional — here's why and how."
+date: 2026-03-01
+tags:
+  - cqrs
+  - architecture
+  - nestjs
+---
+
+Most CQRS introductions show symmetric command and query sides. Same repository, same entity, same patterns on both. In production, the two sides look nothing alike — and that's the point.
+
+Commands load aggregates, call domain methods, and save through repository ports. Queries inject the database client directly and return flat projections. The asymmetry isn't laziness. It's a deliberate optimization that follows from what each side actually needs to do.
+
+## The command side: full domain orchestration
+
+A simple command follows this sequence: load aggregate via port, call a domain method, save.
+
+```ts title="approve-order.handler.ts"
+@CommandHandler(ApproveOrderCommand)
+export class ApproveOrderHandler
+  implements ICommandHandler<ApproveOrderCommand>
+{
+  constructor(
+    @Inject(ORDER_REPOSITORY)
+    private readonly orderRepo: IOrderRepository,
+    private readonly audit: AuditService,
+  ) {}
+
+  async execute(command: ApproveOrderCommand): Promise<void> {
+    try {
+      const order = await this.orderRepo.findById(command.orderId);
+      if (!order) throw new OrderNotFoundException(command.orderId);
+
+      order.approve(); // guard → mutate → emit event
+      await this.orderRepo.save(order);
+
+      this.audit.record({
+        action: 'order.approved',
+        result: 'success',
+        resourceId: command.orderId,
+      });
+    } catch (error) {
+      this.audit.record({
+        action: 'order.approved',
+        result: 'failure',
+        resourceId: command.orderId,
+      });
+      throw error;
+    }
+  }
+}
+```
+
+The entity's `approve()` method checks the current status (throws if not `PENDING`), mutates the state, and emits a domain event. The command handler is an orchestrator — it doesn't contain business logic itself.
+
+## Complex command orchestration
+
+Real commands often need multiple ports, idempotency guards, and multi-step accounting. Here's a realistic issue-card command that coordinates five ports:
+
+```ts title="place-order.handler.ts"
+@CommandHandler(PlaceOrderCommand)
+export class PlaceOrderHandler
+  implements ICommandHandler<PlaceOrderCommand>
+{
+  constructor(
+    @Inject(ORDER_REPOSITORY)
+    private readonly orderRepo: IOrderRepository,
+    @Inject(PRODUCT_CATALOG_PORT)
+    private readonly catalog: IProductCatalogPort,
+    @Inject(ORDER_BILLING_PORT)
+    private readonly billing: IOrderBillingPort,
+    @Inject(ORDER_GUARD)
+    private readonly guard: IOrderGuard,
+    private readonly audit: AuditService,
+  ) {}
+
+  async execute(command: PlaceOrderCommand) {
+    // 1. Validate product availability (cross-context)
+    const product = await this.catalog.getProduct(
+      command.merchantId,
+      command.productId,
+    );
+    if (!product)
+      throw new ProductNotAvailableException(command.productId);
+
+    // 2. Validate amount limits
+    if (command.amount.lt(product.minAmount))
+      throw new InvalidAmountException(command.amount);
+
+    // 3. Idempotency guard wraps the mutating work
+    return this.guard.ensureUnique({
+      externalOrderId: command.externalOrderId,
+      merchantId: command.merchantId,
+      type: 'PURCHASE',
+      fn: async () => {
+        // 4. Compute fees
+        const fee = command.amount
+          .mul(new Decimal(product.feePercent).div(100))
+          .toDecimalPlaces(2);
+
+        // 5. Create aggregate (no DB write yet)
+        const order = Order.create({
+          merchantId: command.merchantId,
+          externalOrderId: command.externalOrderId,
+          amount: command.amount,
+          fee,
+        });
+
+        // 6. Phase 1 accounting: freeze the balance
+        const freezeResult = await this.billing.freezeBalance({
+          orderId: order.orderId,
+          customerId: command.merchantId,
+          amount: command.amount.add(fee),
+        });
+        if (freezeResult instanceof InsufficientFundsError) {
+          throw freezeResult;
+        }
+
+        // 7. Activate and persist
+        order.activate();
+        await this.orderRepo.save(order);
+
+        this.audit.record({
+          action: 'order.placed',
+          result: 'success',
+          resourceId: order.orderId,
+        });
+
+        return {
+          orderId: order.orderId,
+          externalOrderId: order.externalOrderId,
+        };
+      },
+    });
+  }
+}
+```
+
+### Two-phase accounting
+
+The freeze/settle split is critical:
+
+- **Phase 1 (command handler):** `freezeBalance` debits the merchant's available balance into a reserved account. If the merchant has insufficient funds, we throw *before* any external API call.
+- **Phase 2 (event handler):** when the `OrderFulfilledEvent` arrives (maybe from a webhook minutes later), the `OnOrderFulfilledSettleHandler` calls `settleOrder` to convert frozen entries into final revenue/payable entries.
+
+This means the merchant's balance is locked immediately, but the accounting only fully settles when the operation actually completes. If the operation fails, a separate handler unfreezes.
+
+### Idempotency guard
+
+The `ensureUnique` wrapper combines a Redis distributed lock with a database unique index:
+
+```ts
+this.guard.ensureUnique({
+  externalOrderId: command.externalOrderId,
+  merchantId: command.merchantId,
+  type: 'PURCHASE',
+  fn: async () => {
+    // This code runs at most once per externalOrderId
+  },
+});
+```
+
+The Redis lock prevents concurrent execution. The DB unique index catches races if the lock expires. Both layers are needed — Redis alone doesn't survive process crashes, and the DB index alone allows duplicate work before the first insert commits.
+
+### Fan-out event handlers
+
+A single `OrderFulfilledEvent` fans out to multiple independent handlers:
+
+```ts
+// Each is a separate @EventsHandler class
+OnOrderFulfilledSettleHandler    // settles accounting
+OnOrderFulfilledFeeHandler       // records provider fee (if > 0)
+OnOrderFulfilledNotifyHandler    // sends webhook
+```
+
+Each handler has its own idempotency flag on the aggregate (`isSettled()`, `isFeeRecorded()`), so they can each be retried independently without double-counting.
+
+## The query side: skip the domain model
+
+Now the asymmetry. Query handlers don't use repository ports or domain entities at all:
+
+```ts title="list-orders.handler.ts"
+@QueryHandler(ListOrdersQuery)
+export class ListOrdersHandler
+  implements IQueryHandler<ListOrdersQuery>
+{
+  constructor(private readonly prisma: PrismaService) {}
+
+  async execute(query: ListOrdersQuery) {
+    const { merchantId, status, page, limit, search } = query;
+
+    const where: Prisma.OrderWhereInput = {
+      merchantId,
+      ...(status !== undefined && { status }),
+      ...(search !== undefined && {
+        OR: [
+          { orderId: { contains: search } },
+          { externalOrderId: { contains: search } },
+        ],
+      }),
+    };
+
+    const [orders, total] = await Promise.all([
+      this.prisma.order.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.order.count({ where }),
+    ]);
+
+    return new PaginatedResult(
+      orders.map(
+        ({
+          internalProviderId: _,
+          providerRef: _p,
+          ...order
+        }) => ({
+          ...order,
+          amount: order.amount.toString(),
+          fee: order.fee.toString(),
+        }),
+      ),
+      total,
+      page,
+      limit,
+    );
+  }
+}
+```
+
+Key patterns in the query handler:
+
+1. **Direct `PrismaService` injection** — no repository port, no `@Inject(SYMBOL)`.
+2. **Typed `Prisma.OrderWhereInput`** — build the filter dynamically from query params.
+3. **Parallel `findMany` + `count`** — single await for both.
+4. **Destructure to strip** — remove internal/sensitive fields (`internalProviderId`, `providerRef`) before returning.
+5. **`Decimal.toString()`** — the only domain concern: serialize monetary values at the edge.
+
+### Why the asymmetry makes sense
+
+**Commands need the domain model** because they enforce invariants. When you call `order.approve()`, the entity checks that the order is in `PENDING` state, throws if it's not, and emits the right event. Skipping this means duplicating guards in every handler.
+
+**Queries don't need invariants** because they're read-only. There's no state to protect. Rehydrating an `Order` entity from the database just to read its `status` field is wasted CPU — the Prisma row already has that field.
+
+The rehydration cost is real. An entity with nested value objects (each doing `from()` reconstruction), Decimal conversions, and encrypted field decryption can take measurable time per row. For a query that returns 100 rows, you're paying 100x the reconstruction cost for data you'll just serialize back to JSON anyway.
+
+### When queries DO need domain logic
+
+Two exceptions where I do use the domain model on the query side:
+
+1. **Computed fields** that only exist in domain logic (e.g., `order.isRefundable()` checks three conditions that shouldn't be duplicated in SQL).
+2. **Field-level decryption** — when columns are encrypted at rest and the query needs to return decrypted values, the decryption port (a domain concern) needs to be in the query path.
+
+For both cases, I inject the specific port needed (e.g., `IDataCipherPort` for decryption), not the full repository.
+
+## The testing asymmetry
+
+This mirrors the code asymmetry:
+
+**Command handler tests** are unit tests with in-memory repos:
+
+```ts
+beforeEach(() => {
+  orderRepo = new InMemoryOrderRepository();
+  billing = {
+    freezeBalance: async () => undefined,
+    settleOrder: async () => undefined,
+  };
+  handler = new PlaceOrderHandler(
+    orderRepo,
+    catalog,
+    billing,
+    guard,
+    audit,
+  );
+});
+
+it('creates an order and freezes the balance', async () => {
+  const result = await handler.execute(
+    new PlaceOrderCommand(
+      'merchant-1',
+      'product-1',
+      new Decimal('100'),
+      'ext-001',
+    ),
+  );
+
+  expect(orderRepo.orders).toHaveLength(1);
+  expect(orderRepo.orders[0].status).toBe(OrderStatus.PROCESSING);
+});
+```
+
+No `TestingModule`. No database. Sub-millisecond execution.
+
+**Query handler tests** are integration tests with a real database:
+
+```ts
+beforeAll(async () => {
+  const module = await Test.createTestingModule({
+    imports: [PrismaModule],
+    providers: [ListOrdersHandler],
+  }).compile();
+
+  prisma = module.get(PrismaService);
+  handler = module.get(ListOrdersHandler);
+});
+
+it('filters by status and paginates', async () => {
+  // seed data via prisma.order.createMany(...)
+  const result = await handler.execute(
+    new ListOrdersQuery('merchant-1', 'CONFIRMED', 1, 10),
+  );
+
+  expect(result.data).toHaveLength(3);
+  expect(result.total).toBe(3);
+});
+```
+
+This is intentional. Mocking `PrismaService.findMany` to return canned data just tests that your mock works. The whole point of a query handler is getting the right data from the database with the right filters — you need a real database to verify that.
+
+The testing split follows the code split: **commands test domain logic (fast), queries test data access (correct)**.

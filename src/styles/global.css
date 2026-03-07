@@ -2,41 +2,48 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap');
-
 html {
-    min-width: 360px;
-    scroll-behavior: smooth;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    font-weight: 400;
-    font-size: 0.95rem;
-    @apply text-[#f0f6fc] subpixel-antialiased;
+  min-width: 360px;
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
-    background: linear-gradient(180deg, transparent 0, #0d1117 550px),
-        fixed 0 0 /20px 20px radial-gradient(#21262d 1px, transparent 0),
-        fixed 10px 10px /20px 20px radial-gradient(#21262d 1px, transparent 0);
-    @apply bg-[#0d1117];
+  @apply bg-[#fafafa] text-[#171717] dark:bg-[#111111] dark:text-[#fafafa];
 }
 
-#__next {
-    display: flex;
-    flex-direction: column;
-    min-height: 100vh;
+/* rehype-pretty-code */
+[data-rehype-pretty-code-figure] pre {
+  @apply overflow-x-auto rounded-lg px-0 py-4 text-sm leading-relaxed;
 }
 
-p {
-    @apply leading-relaxed;
+[data-rehype-pretty-code-figure] code {
+  @apply grid;
 }
 
-@keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0; }
+[data-rehype-pretty-code-figure] [data-line] {
+  @apply border-l-2 border-transparent px-5;
 }
 
-.cursor-blink::after {
-    content: '|';
-    animation: blink 1s infinite;
-    margin-left: 2px;
+[data-rehype-pretty-code-figure] [data-highlighted-line] {
+  @apply border-l-2 border-neutral-500 bg-neutral-500/10;
+}
+
+[data-rehype-pretty-code-title] {
+  @apply rounded-t-lg border border-b-0 border-neutral-700 bg-neutral-800 px-5 py-2 text-xs font-mono text-neutral-300;
+}
+
+[data-rehype-pretty-code-title] + pre {
+  @apply rounded-t-none;
+}
+
+/* prose overrides for inline code vs code blocks */
+.prose :where(code):not(:where(pre *, [data-rehype-pretty-code-figure] *)) {
+  @apply bg-gray-100 dark:bg-neutral-800 rounded px-1.5 py-0.5 text-sm font-normal;
+}
+
+.prose :where(code):not(:where(pre *, [data-rehype-pretty-code-figure] *))::before,
+.prose :where(code):not(:where(pre *, [data-rehype-pretty-code-figure] *))::after {
+  content: none;
 }
