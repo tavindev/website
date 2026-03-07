@@ -26,9 +26,11 @@ function heading(level: 1 | 2 | 3 | 4) {
     return (
       <Tag id={id} {...props}>
         {id && (
-          <a href={`#${id}`} className="no-underline opacity-0 hover:opacity-100 transition-opacity mr-1" aria-label="Link to section">
-            #
-          </a>
+          <a
+            href={`#${id}`}
+            className="no-underline opacity-0 hover:opacity-100 transition-opacity mr-1 before:content-['#']"
+            aria-label="Link to section"
+          />
         )}
         {children}
       </Tag>

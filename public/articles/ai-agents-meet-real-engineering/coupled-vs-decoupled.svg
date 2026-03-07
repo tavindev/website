@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 340" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+  <rect width="800" height="340" fill="#fafafa" rx="12"/>
+
+  <!-- Left: Coupled -->
+  <text x="190" y="36" font-size="13" font-weight="600" fill="#94a3b8" text-anchor="middle" letter-spacing="0.08em">COUPLED</text>
+
+  <rect x="40" y="56" width="130" height="44" rx="10" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="105" y="83" font-size="13" fill="#1e293b" text-anchor="middle" font-weight="500">Service A</text>
+
+  <line x1="170" y1="78" x2="220" y2="78" stroke="#d1d5db" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <rect x="220" y="56" width="130" height="44" rx="10" fill="#1e293b" stroke="#1e293b" stroke-width="1"/>
+  <text x="285" y="83" font-size="13" fill="#fff" text-anchor="middle" font-weight="500">SNS</text>
+
+  <line x1="285" y1="100" x2="285" y2="130" stroke="#d1d5db" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <rect x="220" y="130" width="130" height="44" rx="10" fill="#1e293b" stroke="#1e293b" stroke-width="1"/>
+  <text x="285" y="157" font-size="13" fill="#fff" text-anchor="middle" font-weight="500">SQS</text>
+
+  <line x1="285" y1="174" x2="285" y2="204" stroke="#d1d5db" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <rect x="220" y="204" width="130" height="44" rx="10" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="285" y="231" font-size="13" fill="#1e293b" text-anchor="middle" font-weight="500">Service B</text>
+
+  <text x="190" y="290" font-size="12" fill="#94a3b8" text-anchor="middle" font-style="italic">Only runs on AWS</text>
+
+  <!-- Divider -->
+  <line x1="400" y1="20" x2="400" y2="320" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="6,4"/>
+
+  <!-- Right: Decoupled -->
+  <text x="600" y="36" font-size="13" font-weight="600" fill="#94a3b8" text-anchor="middle" letter-spacing="0.08em">DECOUPLED</text>
+
+  <rect x="535" y="56" width="130" height="44" rx="10" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="600" y="83" font-size="13" fill="#1e293b" text-anchor="middle" font-weight="500">Service A</text>
+
+  <line x1="600" y1="100" x2="600" y2="130" stroke="#d1d5db" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <rect x="525" y="130" width="150" height="44" rx="10" fill="#1e293b" stroke="#1e293b" stroke-width="1"/>
+  <text x="600" y="157" font-size="13" fill="#fff" text-anchor="middle" font-weight="500">EventPublisher</text>
+
+  <!-- Three branches -->
+  <line x1="545" y1="174" x2="460" y2="224" stroke="#d1d5db" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+  <line x1="600" y1="174" x2="600" y2="224" stroke="#d1d5db" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+  <line x1="655" y1="174" x2="740" y2="224" stroke="#d1d5db" stroke-width="1.5" marker-end="url(#arrow-gray)"/>
+
+  <rect x="400" y="224" width="120" height="40" rx="10" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="460" y="249" font-size="12" fill="#64748b" text-anchor="middle">SNS</text>
+
+  <rect x="540" y="224" width="120" height="40" rx="10" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="600" y="249" font-size="12" fill="#64748b" text-anchor="middle">Redis</text>
+
+  <rect x="680" y="224" width="120" height="40" rx="10" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="740" y="249" font-size="12" fill="#64748b" text-anchor="middle">In-Memory</text>
+
+  <text x="460" y="285" font-size="11" fill="#94a3b8" text-anchor="middle">prod</text>
+  <text x="600" y="285" font-size="11" fill="#94a3b8" text-anchor="middle">local</text>
+  <text x="740" y="285" font-size="11" fill="#94a3b8" text-anchor="middle">tests</text>
+
+  <text x="600" y="310" font-size="12" fill="#94a3b8" text-anchor="middle" font-style="italic">Runs anywhere</text>
+
+  <defs>
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#d1d5db"/>
+    </marker>
+  </defs>
+</svg>
