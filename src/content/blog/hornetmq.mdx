@@ -1,0 +1,153 @@
+---
+title: "HornetMQ: A BullMQ-Compatible Job Queue for Rust"
+slug: hornetmq
+description: "How I built a Redis-backed job queue in Rust that speaks BullMQ's wire protocol, and how AI brought it back from a two-year hiatus."
+date: 2026-03-13
+tags:
+  - rust
+  - architecture
+  - ai
+  - testing
+---
+
+BullMQ is the dominant job queue in the Node.js ecosystem. Redis-backed, battle-tested, used everywhere. If you run background jobs in Node, you probably run BullMQ.
+
+I wanted the same thing in Rust. Not a Rust-flavored reimagination — the *same thing*. Same Redis keys, same Lua scripts, same wire format. A Rust worker that can pick up jobs enqueued by a Node.js producer, and vice versa. That project is [HornetMQ](https://github.com/tavindev/hornetmq).
+
+## Why wire compatibility matters
+
+Most job queue libraries invent their own protocol. That makes migration an all-or-nothing affair: you rewrite every producer and every consumer at once, or you don't migrate at all.
+
+Wire compatibility with BullMQ means you can introduce Rust workers incrementally. Your Node.js services keep enqueuing jobs exactly as before. One hot-path worker gets rewritten in Rust. If it works, you do another. If it doesn't, you revert with zero changes to the producer side. The queue doesn't care which language is processing it.
+
+This is the same strategy that made Biome viable as a Prettier/ESLint replacement and that made ruff viable as a Python linter. Don't ask people to change their workflows. Just be faster.
+
+## Architecture
+
+HornetMQ is a Rust workspace with two crates: `hornetmq` (the library) and `hornetmq-macros` (the proc-macro crate for the `#[worker]` attribute).
+
+The core library has three layers:
+
+```
+hornet/src/
+  core/
+    job.rs          # Job<Data>, JobBuilder, JobOptions
+    backoff.rs      # BackoffStrategy: fixed, exponential
+    retry.rs        # should_retry(), next_retry_delay()
+    stall.rs        # is_stalled()
+    events.rs       # JobEvent enum
+  scripts/
+    loader.rs       # Lua script loader with @include resolution
+    commands/       # BullMQ's actual Lua scripts (verbatim)
+  queue.rs          # Queue producer
+  worker.rs         # Worker consumer
+```
+
+The `core/` module is pure domain logic. No Redis, no I/O. Everything in there is unit-testable with zero infrastructure.
+
+The `scripts/` module is the BullMQ compatibility layer. It loads BullMQ's actual Lua scripts — not ports, not rewrites, the real files — and resolves their `@include` directives into a single script string that Redis can execute via `EVALSHA`. This is the single most important design decision in the project: by using the same scripts, we get identical behavior by construction, not by hoping our reimplementation matches.
+
+The `queue.rs` and `worker.rs` modules are the public API. They orchestrate the Lua scripts with the right arguments in the right order.
+
+## How the worker works
+
+The worker is an async loop built on tokio. It manages a pool of processor tasks up to a configured concurrency limit. When all slots are occupied, the main loop blocks on `BZPOPMIN` against a marker key — BullMQ's mechanism for waking idle workers when new jobs arrive.
+
+Each processor task calls `moveToActive` (a Lua script) to atomically claim a job from the queue. After processing, it calls `moveToFinished` to move the job to either `completed` or `failed`. If a job fails and has retries remaining, the worker computes the next backoff delay and either re-queues immediately or moves it to the delayed set.
+
+A background task handles stall detection. Every `lock_duration / 2` milliseconds, it scans the active list for jobs whose lock key has expired — meaning the worker that claimed them crashed mid-processing. Stalled jobs get re-queued or moved to failed depending on remaining retries.
+
+Graceful shutdown is built in. SIGINT or SIGTERM sets an `AtomicBool` flag. The main loop stops accepting new jobs and drains all in-progress tasks before returning.
+
+## The worker macro
+
+Declaring a worker manually requires wiring up the struct, the processor function, concurrency, retries, and backoff. The `#[worker]` attribute macro eliminates that boilerplate:
+
+```rust title="workers/email.rs"
+use anyhow::Result;
+use hornetmq::{worker, Job};
+use serde::Deserialize;
+
+#[derive(Debug, Deserialize)]
+struct Email {
+    to: String,
+    subject: String,
+}
+
+#[worker(queue = "emails", concurrency = 4, retry = 3, backoff = "exponential(1000, 30000)")]
+fn send_email(job: &Job<Email>) -> Result<String> {
+    println!("Sending to {}: {}", job.data.to, job.data.subject);
+    Ok("sent".into())
+}
+
+#[tokio::main]
+async fn main() {
+    let mut worker = SendEmailWorker::new("redis://localhost:6379");
+    worker.run().await.unwrap();
+}
+```
+
+The macro generates a `SendEmailWorker` struct with `new()` and `run()` methods. Data and return types are inferred from the function signature — `&Job<Email>` gives the input type, `Result<String>` gives the output type. The function name is converted from `snake_case` to `PascalCase` and suffixed with `Worker`.
+
+All configuration happens at compile time. Backoff strings like `"exponential(1000, 30000)"` are parsed by the proc macro, not at runtime.
+
+## Features
+
+Beyond the basic produce/consume loop:
+
+- **Priority queues** — lower number, higher priority
+- **Delayed jobs** — schedule jobs for future processing
+- **Custom job IDs** — idempotent enqueue with your own identifiers
+- **LIFO mode** — push to front of queue instead of back
+- **Automatic cleanup** — `remove_on_complete` and `remove_on_fail` control how many finished jobs to keep
+- **Queue pause/resume** — pause processing without losing jobs
+- **Drain** — clear all waiting, delayed, and paused jobs
+- **Bulk enqueue** — add multiple jobs in sequence
+- **Rate limiting** — control throughput with `Limiter { max, duration }`
+- **Job counts** — query how many jobs are in each state
+
+All of these use the same Redis data structures as BullMQ, so state is visible and manageable from both sides.
+
+## Testing philosophy
+
+Three layers, each with a specific purpose.
+
+**Unit tests** cover the `core/` module — backoff calculation, retry logic, stall detection, event deserialization, the Lua script include resolver. These are fast, deterministic, and need no infrastructure. They exercise boundary conditions aggressively: what happens at attempt 0, at max attempts, with zero delay, with overflow values.
+
+**Integration tests** hit a real Redis instance. No mocks, no fakes. The queue tests enqueue jobs and verify Redis state directly. The worker tests inject jobs into Redis, run the worker, and confirm that jobs move through the expected state transitions. Each test uses a UUID-prefixed queue name to avoid collisions and cleans up its keys after.
+
+**BullMQ compatibility tests** are the most unusual layer. They shell out to `bun` and run actual BullMQ JavaScript code against the same Redis instance. HornetMQ enqueues a job, BullMQ reads it and verifies the format is correct. BullMQ enqueues a job, HornetMQ processes it and verifies the result. This is not a theoretical compatibility claim — it's a bidirectional integration test that runs the real library on both sides.
+
+```rust title="tests/bullmq_compat_integration.rs"
+fn bullmq_produce(queue_name: &str, job_name: &str, data_json: &str, opts_json: &str) -> String {
+    let output = Command::new("bun")
+        .arg("run")
+        .arg(format!("{}/bullmq_produce.mjs", scripts_dir()))
+        .arg(queue_name)
+        .arg(job_name)
+        .arg(data_json)
+        .arg(opts_json)
+        .output()
+        .expect("failed to run bullmq_produce.mjs — is bun installed?");
+
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+```
+
+The compatibility test helpers are intentionally straightforward. No test framework abstraction, no clever fixtures. `Command::new("bun")`, run the script, check the output. If BullMQ can't read what HornetMQ wrote, the test fails. That simplicity is the point — there's nowhere for a false positive to hide.
+
+## How AI revived this project
+
+I started HornetMQ in January 2024. Over about ten days I built the script loader, the basic worker loop, the retry mechanism, and enough infrastructure to prove the concept worked. Then life happened. The project sat untouched for two years.
+
+The codebase I left behind was functional but rough. No proper module structure, no queue producer API, no backoff strategies, no stall detection, no graceful shutdown, no examples, no CI, no tests beyond manual verification. It was a prototype that proved a thesis but wasn't usable by anyone.
+
+When I came back to it, the gap between "working prototype" and "publishable library" felt enormous. Restructuring the modules, implementing all the missing BullMQ features, building a proper test suite, writing the proc macro, setting up CI — any one of those is a weekend project. All of them together felt like a month of evenings I didn't have.
+
+AI changed the economics. The architectural decisions were mine: DDD module structure, the three-layer test strategy, using BullMQ's actual Lua scripts instead of reimplementing them, the proc macro API design. Those are judgment calls that require understanding the problem space, the tradeoffs, and what "done" looks like. But the implementation work — translating those decisions into code, writing the boilerplate, building out test cases for every boundary condition, wiring up CI — that's exactly the kind of bounded, well-specified work where AI agents are most effective.
+
+The entire revival happened in a single day. The DDD restructure, the queue producer, worker backoff and graceful shutdown, stall detection, four example apps, full README, crates.io packaging, CI/CD pipeline, BullMQ wire format compatibility, the worker macro rewrite, custom job IDs, LIFO, delayed jobs, queue pause/resume, drain, bulk enqueue, rate limiting, and two full integration test suites including the cross-language BullMQ compat tests.
+
+That's not because the work was trivial. It's because the work was *specifiable*. I could describe what I wanted in terms of interfaces, behaviors, and constraints, and the agent could execute against that spec while I steered. When it put infrastructure logic in the wrong module, I corrected the boundary. When it tried to mock Redis in integration tests, I pushed back. The agent rowed. I steered.
+
+Two years of stalled progress, shipped in an afternoon. Not because AI replaced the engineering. Because it made the engineering affordable again.
