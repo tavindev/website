@@ -1,0 +1,106 @@
+---
+title: "tavin.cloud: A PaaS for the Agent Era"
+slug: paas-for-the-agent-era
+description: "Every PaaS was designed for humans clicking dashboards. tavin.cloud is built on the opposite bet — the first-class deployer is an LLM, the API and MCP server are the same surface, and the launch target is São Paulo bare metal."
+date: 2026-04-27
+tags:
+  - paas
+  - mcp
+  - ai
+  - architecture
+---
+
+You cannot tell Claude Code to `git push heroku main`. Or rather, you can, but it fails.
+
+The first time it fails, it's because there's no Heroku CLI in the agent's sandbox. So you install it. Then it fails because `heroku login` wants to open a browser tab and wait for you to authenticate. So you find a flag for non-interactive login. Then it fails because the API token you minted needs to be in an environment variable the agent doesn't know about. Then it fails because the deploy uses git over SSH and your agent's container has no SSH agent. By the time you've resolved all of that, you've stopped using an AI agent and started using yourself, badly.
+
+This is the pattern with every PaaS I've tried in the last year. They were built for humans at terminals. You can drag an agent through them, but every step exposes how much of the experience assumes a person sitting in front of a browser tab.
+
+I've been building [tavin.cloud](https://cloud.tavin.dev) on the other assumption: the first-class deployer is an LLM. Humans are also welcome.
+
+## What changes when the deployer is an LLM
+
+**Auth.** An agent cannot complete an OAuth dance. There's no browser to redirect to, no second device to confirm on, no tab the agent can come back to. The credential has to be a string the agent can be handed once and reuse on every call. Personal Access Tokens, not browser-mediated sessions.
+
+**Surface.** Agents do not click. They call tools. The right interface for them is not "a website with a deploy button" but a list of tools with typed schemas and structured responses. That's what the [Model Context Protocol](https://modelcontextprotocol.io/) is — the LLM-native version of an HTTP API.
+
+**Idempotency.** When the deployer is an autonomous loop, partial failures are normal. Calling `create_project` twice should not produce two projects, and `deploy` should be safe to retry without inventing duplicate revisions. Idempotency stops being a nice-to-have and becomes the contract.
+
+**Contract surface.** The *thing* the agent ships matters. Buildpacks are great when a human is debugging a slug build, but they introduce magic an agent has to reverse-engineer when something goes wrong. The image is the lowest-magic primitive — what the agent built locally is byte-for-byte what runs in production.
+
+These four constraints — programmatic auth, tool surface, idempotent ops, image-as-contract — are what I designed the platform around.
+
+## What tavin.cloud is
+
+A PaaS where the public API and the MCP server are the same surface. There's no separate "agent mode." Every operation an agent can do is an operation a human can do, and vice versa, because the dashboard and the CLI both consume the same tool catalogue.
+
+You bring a Docker image. The platform pulls it — or builds it from a connected source — runs it, fronts it with TLS at `apps.tavin.dev/<deploymentId>/`, and gives you live logs. No buildpacks. No `Procfile`. No `git push`. Your Dockerfile is the contract.
+
+The MCP server lives at `https://api.tavin.dev/api/v1/mcp`. To wire it into Claude Code:
+
+```json title="~/.claude.json"
+{
+  "mcpServers": {
+    "tavin-cloud": {
+      "type": "http",
+      "url": "https://api.tavin.dev/api/v1/mcp",
+      "headers": { "Authorization": "Bearer tvn_..." }
+    }
+  }
+}
+```
+
+That is the whole integration. From this point Claude Code has tools like `list_projects`, `create_project`, `get_deployment_build_logs`, `redeploy_deployment`. It can ship.
+
+## A real session
+
+Mint a token from the CLI:
+
+```sh
+$ tavin tokens new "Claude Code on laptop"
+Bearer tvn_5ab2c0d4e7f1a9b3c6d8e2f4a7b9c1d3
+```
+
+Paste it into the MCP config above. Then in Claude Code:
+
+> Deploy this Express app to tavin. Watch the logs and tell me when it's serving requests.
+
+The agent calls `create_project` with the repo's name. It calls `deploy` with the image ref it just pushed. It polls `get_deployment` until the status is `RUNNING`. It calls `get_deployment_runtime_logs` and tails them while the container boots. When the URL returns 200, the agent reports back.
+
+The thing that makes this work is not that the model is clever. The model has always been clever enough to issue HTTP calls. What makes it work is that every step is a single tool call with a structured response, no intermediate human, no "click the deploy button," no "approve in the dashboard." The agent never gets stuck behind a UI.
+
+If a step fails — image pull error, port binding conflict, OOM — the failure surfaces as a structured field on the deployment object, not as a red toast in a dashboard the agent can't see. The agent can read it, reason about it, fix the Dockerfile, and call `redeploy_deployment` without asking me what to do.
+
+## Where it actually runs
+
+I want to be honest about this part because it's the most interesting bit, and the part most product writeups would hide.
+
+The production preview of tavin.cloud runs on a MacBook on my desk.
+
+Real TLS. Real Kubernetes. Real MCP-authenticated PATs. End-to-end production-shaped — and it is also a single computer in my apartment. If this laptop dies, tavin.cloud dies with it. There's no failover; that's the entire point of calling this a preview.
+
+I'm calling it what it is: a *deployment environment*, not durable infrastructure. I built it this way because the alternative — provisioning real cloud infra before the platform was even formed — would have meant burning money for months while I was still figuring out what the product was supposed to be. The MacBook gives me a real, public, end-to-end environment for the cost of a Cloudflare account and electricity. When the product is ready to charge, the same shape ports cleanly to a leased server.
+
+## The plan
+
+The first real production target is **bare metal in São Paulo**, peered into the local IX. Single-digit-millisecond latency to LATAM users — the same workload on AWS US-East round-trips through the Atlantic before answering.
+
+The launch wedge is geography and payment, not unit-price undercutting. **Billing in BRL, with Pix and Boleto as first-class payment methods.** A free tier with R\$25 of signup credit, no card required. A Hobby tier and a Pro tier above that — monthly fee includes prepaid credits and unlocks higher per-service caps.
+
+On real server-grade hardware, **hardware VM isolation per tenant** becomes the default — workloads run in their own micro-VMs instead of sharing a kernel with their neighbors. The Mac preview can't do this; production hosts will.
+
+A second product line is **GPU rental on the same control plane**. Same MCP-native interface, same image-as-contract, but workloads land on a VM with a passed-through GPU instead of a container. For people who want a GPU without negotiating a Kubernetes operator and a queue.
+
+Multi-region comes later. São Paulo first, by itself, until the geography and the payment rail are validated.
+
+## Why agents-first matters
+
+You can build for agents *or* humans, but the constraints differ enough that the same platform won't serve both equally if you start from the human side.
+
+A human-first PaaS can get away with a flaky dashboard, an OAuth flow that needs a browser, deploy steps that require copy-pasting between tabs. Each of those is friction a human will absorb. An agent will not — every one of them is an integration cliff that ends the deploy.
+
+The interesting thing is that designing for the agent case gives you a strictly better human platform too. One auth model, not two. Idempotent operations with structured errors. Every action available as a single tool call with a typed response. A CLI and a dashboard that derive from the same catalogue, so they can never drift. These are properties humans benefit from, but the constraint that *forces* them is having an agent on the other end.
+
+The wedge is geography and payment rail. The *shape* is MCP-native. Both are necessary; together they are the bet.
+
+If you want to try it, the install is `brew install tavin`. Mint a PAT, point Claude Code at the MCP server, and ship something. I'm at gustavo@tavin.dev — tell me what breaks.
